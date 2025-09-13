@@ -8,18 +8,27 @@ from datetime import datetime
 import os
 import tempfile
 import base64
+import qrcode
+from io import BytesIO
+import socket
+import subprocess
+import platform
 
-from inference import get_prediction, run_full_benchmark, MODELS
+from inference import get_prediction, run_full_benchmark, MODELS, run_single_compression
 
-st.set_page_config(
-    page_title="Project Minerva - DL Compression Tool Predictor",
-    page_icon="⚡",
-    layout="wide",
-    initial_sidebar_state="collapsed",
-)
+def setup_page_config():
+    """Set up the page configuration"""
+    st.set_page_config(
+        page_title="Project Minerva - Smart File Compression",
+        page_icon="🗜️",
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
 
-st.markdown(
-    """
+def inject_custom_css():
+    """Inject custom CSS for styling"""
+    st.markdown(
+        """
 <style>
     /* Import modern fonts */
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
@@ -428,9 +437,8 @@ st.markdown(
     }
 </style>
 """,
-    unsafe_allow_html=True,
-)
-
+        unsafe_allow_html=True,
+    )
 
 def create_navigation():
     """Create modern SaaS navigation header"""
@@ -441,7 +449,7 @@ def create_navigation():
             <div class="nav-logo">M</div>
             <div>
                 <div class="nav-title">Project Minerva</div>
-                <div class="nav-subtitle">DL Compression Tool Predictor</div>
+                <div class="nav-subtitle">Smart File Compression</div>
             </div>
         </div>
         <div class="nav-status">
@@ -452,7 +460,6 @@ def create_navigation():
     """,
         unsafe_allow_html=True,
     )
-
 
 def create_hero_section():
     """Create modern hero section"""
@@ -489,7 +496,6 @@ def create_hero_section():
             unsafe_allow_html=True,
         )
 
-
 def create_model_selector():
     """Create modern model selection interface"""
     st.markdown(
@@ -512,7 +518,6 @@ def create_model_selector():
 
     st.markdown("</div>", unsafe_allow_html=True)
     return model_name
-
 
 def create_upload_interface():
     """Create modern file upload interface"""
@@ -586,7 +591,6 @@ def create_upload_interface():
     st.markdown("</div>", unsafe_allow_html=True)
     return uploaded_file
 
-
 def create_analysis_progress(progress_value, status_message):
     """Create modern progress indicator"""
     st.markdown(
@@ -604,7 +608,6 @@ def create_analysis_progress(progress_value, status_message):
     """,
         unsafe_allow_html=True,
     )
-
 
 def display_features_section(features_data):
     """Display extracted features immediately when ready"""
@@ -647,9 +650,8 @@ def display_features_section(features_data):
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-
-def display_prediction_section(prediction, confidence=None):
-    """Display ML prediction immediately when ready"""
+def display_ai_prediction(prediction, confidence=None):
+    """Display AI prediction immediately when ready"""
     st.markdown(
         f"""
     <div class="results-header">
@@ -660,8 +662,7 @@ def display_prediction_section(prediction, confidence=None):
         unsafe_allow_html=True,
     )
 
-
-def display_compression_results(results_data):
+def display_compression_results(results_data, compressed_file_path=None):
     """Display compression results as they become available"""
     st.markdown(
         """
@@ -685,8 +686,20 @@ def display_compression_results(results_data):
             with col3:
                 st.markdown(f"Size: {result.get('size', 'N/A')}")
 
-    st.markdown("</div>", unsafe_allow_html=True)
+    if compressed_file_path and os.path.exists(compressed_file_path):
+        st.markdown("---")
+        with open(compressed_file_path, "rb") as file:
+            file_data = file.read()
+        
+        st.download_button(
+            label="📥 Download Compressed File",
+            data=file_data,
+            file_name=os.path.basename(compressed_file_path),
+            mime="application/octet-stream",
+            use_container_width=True
+        )
 
+    st.markdown("</div>", unsafe_allow_html=True)
 
 def create_results_dashboard(results):
     """Create modern results dashboard"""
@@ -910,162 +923,62 @@ def create_results_dashboard(results):
 
             st.markdown("</div>", unsafe_allow_html=True)
 
+def generate_qr_code(data, title="QR Code"):
+    """Generate QR code for given data"""
+    qr = qrcode.QRCode(version=1, box_size=10, border=5)
+    qr.add_data(data)
+    qr.make(fit=True)
+    
+    img = qr.make_image(fill_color="black", back_color="white")
+    buf = BytesIO()
+    img.save(buf, format='PNG')
+    buf.seek(0)
+    return buf
 
-def main():
-    """Main application function"""
-    create_navigation()
-    create_hero_section()
+def get_network_url():
+    """Get the network URL for the Streamlit app"""
+    try:
+        # Get local IP address
+        hostname = socket.gethostname()
+        local_ip = socket.gethostbyname(hostname)
+        # Streamlit default port is 8501
+        return f"http://{local_ip}:8501"
+    except:
+        return "http://localhost:8501"
 
-    # Model selection
-    model_name = create_model_selector()
-
-    # File upload
-    uploaded_file = create_upload_interface()
-
-    if uploaded_file is not None:
-        # Analysis button
-        st.markdown(
-            '<div style="text-align: center; margin: 2rem 0;">', unsafe_allow_html=True
+def display_network_qr_in_terminal():
+    """Display network URL QR code in terminal"""
+    try:
+        import qrcode
+        network_url = get_network_url()
+        
+        # Create QR code for terminal display
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            box_size=1,
+            border=1,
         )
-        analyze_button = st.button(" Start Analysis", use_container_width=False)
-        st.markdown("</div>", unsafe_allow_html=True)
-
-        if analyze_button:
-            # Save uploaded file temporarily
-            with tempfile.NamedTemporaryFile(
-                delete=False, suffix=f".{uploaded_file.name.split('.')[-1]}"
-            ) as tmp_file:
-                tmp_file.write(uploaded_file.getvalue())
-                tmp_file_path = tmp_file.name
-
-            class MockFileObj:
-                def __init__(self, path):
-                    self.name = path
-
-            mock_file = MockFileObj(tmp_file_path)
-
-            try:
-
-                # Create containers for progressive updates
-                progress_container = st.empty()
-                features_container = st.empty()
-                prediction_container = st.empty()
-                compression_container = st.empty()
-                final_results_container = st.empty()
-
-                with progress_container.container():
-                    create_analysis_progress(
-                        25, "Extracting features and running AI prediction..."
-                    )
-
-                try:
-                    recommended_tool, key_insights, prediction_time = get_prediction(
-                        tmp_file_path, model_name
-                    )
-
-                    # Display extracted features immediately
-                    features_data = {
-                        "file_props": {
-                            "Size": f"{uploaded_file.size / 1024:.2f} KB",
-                            "Type": key_insights.get("File Type", "Unknown"),
-                        },
-                        "stats": {
-                            "Entropy": key_insights.get("Shannon Entropy", "N/A"),
-                            "Prediction_Time": f"{prediction_time:.3f}s",
-                        },
-                        "content": {},
-                    }
-
-                    # Add specific insights based on file type
-                    if "Dimensions" in key_insights:
-                        features_data["content"]["Dimensions"] = key_insights[
-                            "Dimensions"
-                        ]
-                    if "Duration (s)" in key_insights:
-                        features_data["content"]["Duration"] = key_insights[
-                            "Duration (s)"
-                        ]
-                    if "Page Count" in key_insights:
-                        features_data["content"]["Pages"] = key_insights["Page Count"]
-
-                    with features_container.container():
-                        display_features_section(features_data)
-
-                    # Display AI prediction immediately
-
-                    with progress_container.container():
-                        create_analysis_progress(
-                            75, "Running comprehensive compression benchmark..."
-                        )
-
-                    # Run the full benchmark analysis
-                    fig, summary_report, benchmark_time = run_full_benchmark(
-                        tmp_file_path, recommended_tool
-                    )
-
-                    ml_pipeline_time = prediction_time  # Just the ML prediction time
-                    compression_time = benchmark_time  # Time to test recommended tool
-                    total_smart_time = ml_pipeline_time + compression_time
-                    brute_force_estimate = compression_time * 7  # Test all 7 tools
-                    time_saved = brute_force_estimate - total_smart_time
-                    efficiency_report = {
-                        "ml_pipeline_time": ml_pipeline_time,
-                        "compression_time": compression_time,
-                        "total_smart_time": total_smart_time,
-                        "brute_force_estimate": brute_force_estimate,
-                        "time_saved": time_saved,
-                        "efficiency_gain": (time_saved / brute_force_estimate) * 100
-                        if brute_force_estimate > 0
-                        else 0,
-                    }
-
-                    with progress_container.container():
-                        create_analysis_progress(100, "Analysis complete!")
-
-                    time.sleep(0.5)
-
-                    # Clear progress and show comprehensive results
-                    progress_container.empty()
-
-                    # Create mock results structure for dashboard display
-                    results = (
-                        recommended_tool,
-                        key_insights,
-                        fig,
-                        summary_report,
-                        prediction_time,
-                        benchmark_time,
-                        efficiency_report,
-                    )
-
-                    with final_results_container.container():
-                        create_results_dashboard(results)
-
-                except ValueError as ve:
-                    st.error(f"File validation error: {str(ve)}")
-                except Exception as e:
-                    st.error(f"Analysis error: {str(e)}")
-
-            except Exception as e:
-                st.error(f"Upload processing failed: {str(e)}")
-
-            finally:
-                try:
-                    os.unlink(tmp_file_path)
-                except:
-                    pass
-
-    # Footer
-    st.markdown(
-        """
-    <div style="text-align: center; color: var(--text-muted); font-size: 0.875rem; padding: 3rem 0 2rem 0; border-top: 1px solid var(--border-subtle); margin-top: 3rem;">
-        <p style="margin: 0;"><strong>Project Minerva</strong> - Intelligent File Compression Platform</p>
-        <p style="margin: 0.5rem 0 0 0;">Powered by Advanced Machine Learning & TensorFlow</p>
-    </div>
-    """,
-        unsafe_allow_html=True,
-    )
-
+        qr.add_data(network_url)
+        qr.make(fit=True)
+        
+        print("\n" + "="*50)
+        print("🌐 NETWORK ACCESS QR CODE")
+        print("="*50)
+        print(f"Network URL: {network_url}")
+        print("\nScan this QR code to access the app:")
+        print("-"*30)
+        
+        # Print QR code in terminal
+        qr.print_ascii(invert=True)
+        
+        print("-"*30)
+        print("Share this URL or QR code with others to access the app")
+        print("="*50 + "\n")
+        
+    except ImportError:
+        print(f"\n🌐 Network URL: {network_url}")
+        print("Install 'qrcode' package to see QR code in terminal\n")
 
 def create_interactive_chart(summary_report):
     """Create interactive Plotly chart from compression results"""
@@ -1155,6 +1068,191 @@ def create_interactive_chart(summary_report):
         st.error(f"Chart creation error: {str(e)}")
         return None
 
+def main():
+    """Main Streamlit application"""
+    if 'qr_displayed' not in st.session_state:
+        display_network_qr_in_terminal()
+        st.session_state.qr_displayed = True
+    
+    setup_page_config()
+    inject_custom_css()
+
+    create_navigation()
+    create_hero_section()
+
+    # Model selection
+    model_name = create_model_selector()
+
+    # File upload
+    uploaded_file = create_upload_interface()
+
+    if uploaded_file is not None:
+        # Analysis button
+        st.markdown(
+            '<div style="text-align: center; margin: 2rem 0;">', unsafe_allow_html=True
+        )
+        analyze_button = st.button(" Start Analysis", use_container_width=False)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        if analyze_button:
+            # Save uploaded file temporarily
+            with tempfile.NamedTemporaryFile(
+                delete=False, suffix=f".{uploaded_file.name.split('.')[-1]}"
+            ) as tmp_file:
+                tmp_file.write(uploaded_file.getvalue())
+                tmp_file_path = tmp_file.name
+
+            class MockFileObj:
+                def __init__(self, path):
+                    self.name = path
+
+            mock_file = MockFileObj(tmp_file_path)
+
+            try:
+
+                # Create containers for progressive updates
+                progress_container = st.empty()
+                features_container = st.empty()
+                final_results_container = st.empty()
+
+                with progress_container.container():
+                    create_analysis_progress(
+                        25, "Extracting features and running AI prediction..."
+                    )
+
+                try:
+                    recommended_tool, key_insights, prediction_time = get_prediction(
+                        tmp_file_path, model_name
+                    )
+
+                    # Display extracted features immediately
+                    features_data = {
+                        "file_props": {
+                            "Size": f"{uploaded_file.size / 1024:.2f} KB",
+                            "Type": key_insights.get("File Type", "Unknown"),
+                        },
+                        "stats": {
+                            "Entropy": key_insights.get("Shannon Entropy", "N/A"),
+                            "Prediction_Time": f"{prediction_time:.3f}s",
+                        },
+                        "content": {},
+                    }
+
+                    # Add specific insights based on file type
+                    if "Dimensions" in key_insights:
+                        features_data["content"]["Dimensions"] = key_insights[
+                            "Dimensions"
+                        ]
+                    if "Duration (s)" in key_insights:
+                        features_data["content"]["Duration"] = key_insights[
+                            "Duration (s)"
+                        ]
+                    if "Page Count" in key_insights:
+                        features_data["content"]["Pages"] = key_insights["Page Count"]
+
+                    with features_container.container():
+                        display_features_section(features_data)
+
+                    # Display AI prediction immediately
+
+                    with progress_container.container():
+                        create_analysis_progress(
+                            75, "Running comprehensive compression benchmark..."
+                        )
+
+                    # Run the full benchmark analysis
+                    fig, summary_report, benchmark_time = run_full_benchmark(
+                        tmp_file_path, recommended_tool
+                    )
+
+                    _, _, compressed_file_path = run_single_compression(recommended_tool, tmp_file_path)
+
+                    ml_pipeline_time = prediction_time  # Just the ML prediction time
+                    compression_time = benchmark_time  # Time to test recommended tool
+                    total_smart_time = ml_pipeline_time + compression_time
+                    brute_force_estimate = compression_time * 7  # Test all 7 tools
+                    time_saved = brute_force_estimate - total_smart_time
+                    efficiency_report = {
+                        "ml_pipeline_time": ml_pipeline_time,
+                        "compression_time": compression_time,
+                        "total_smart_time": total_smart_time,
+                        "brute_force_estimate": brute_force_estimate,
+                        "time_saved": time_saved,
+                        "efficiency_gain": (time_saved / brute_force_estimate) * 100
+                        if brute_force_estimate > 0
+                        else 0,
+                    }
+
+                    with progress_container.container():
+                        create_analysis_progress(100, "Analysis complete!")
+
+                    time.sleep(0.5)
+
+                    # Clear progress and show comprehensive results
+                    progress_container.empty()
+
+                    # Create mock results structure for dashboard display
+                    results = (
+                        recommended_tool,
+                        key_insights,
+                        fig,
+                        summary_report,
+                        prediction_time,
+                        benchmark_time,
+                        efficiency_report,
+                    )
+
+                    with final_results_container.container():
+                        create_results_dashboard(results)
+
+                    # Display download button at the bottom of the results
+                    if compressed_file_path and os.path.exists(compressed_file_path):
+                        st.markdown(
+                            """
+                            <div class="saas-card" style="margin-top: 1.5rem;">
+                                <div class="saas-card-header">
+                                    <h3 class="saas-card-title">Download Optimized File</h3>
+                                </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
+                        with open(compressed_file_path, "rb") as file:
+                            file_data = file.read()
+                        
+                        st.download_button(
+                            label="📥 Download Compressed File",
+                            data=file_data,
+                            file_name=os.path.basename(compressed_file_path),
+                            mime="application/octet-stream",
+                            use_container_width=True
+                        )
+                        st.markdown("</div>", unsafe_allow_html=True)
+
+
+                except ValueError as ve:
+                    st.error(f"File validation error: {str(ve)}")
+                except Exception as e:
+                    st.error(f"Analysis error: {str(e)}")
+
+            except Exception as e:
+                st.error(f"Upload processing failed: {str(e)}")
+
+            finally:
+                try:
+                    os.unlink(tmp_file_path)
+                except:
+                    pass
+
+    # Footer
+    st.markdown(
+        """
+    <div style="text-align: center; color: var(--text-muted); font-size: 0.875rem; padding: 3rem 0 2rem 0; border-top: 1px solid var(--border-subtle); margin-top: 3rem;">
+        <p style="margin: 0;"><strong>Project Minerva</strong> - Intelligent File Compression Platform</p>
+        <p style="margin: 0.5rem 0 0 0;">Powered by Advanced Machine Learning & TensorFlow</p>
+    </div>
+    """,
+        unsafe_allow_html=True,
+    )
 
 if __name__ == "__main__":
     main()
