@@ -4,6 +4,7 @@ Project Minerva is a Streamlit-based web app that uses deep learning models to r
 
 The application allows a user to upload a file, select from one of five different AI models, and receive an instant recommendation. To prove its effectiveness, the app also runs a full benchmark in the background, providing a detailed comparison of compression ratios, final file sizes, and the time saved by using the DL-powered approach.
 
+## Note: Final.ipynb contains the EDA,Model Training code
 ## Key Features
 
 -   **Intelligent Prediction:** Uses deep learning to analyze file content and predict the best compressor.
